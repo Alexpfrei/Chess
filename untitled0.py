@@ -257,8 +257,17 @@ function onClickSq(sq) {{
 
 function submitMove(uci) {{
   document.getElementById('status').textContent = 'Moving… (' + uci + ')';
-  var url = window.location.href.split('?')[0] + '?move=' + uci;
-  window.parent.location.href = url;
+  var form = document.createElement('form');
+  form.method = 'GET';
+  form.action = window.parent.location.pathname;
+  form.target = '_parent';
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'move';
+  input.value = uci;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
 }}
 
 renderBoard();

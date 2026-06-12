@@ -3,9 +3,8 @@ import chess
 import json
 import os
 import time
-import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Chess Challenge", layout="centered")
+st.set_page_config(page_title="Chess Challenge", layout="wide")
 
 GAME_FILE = "game.json"
 
@@ -22,9 +21,17 @@ def save_game(data):
 def reset_game():
     save_game({"fen": chess.STARTING_FEN, "moves": [], "status": "ongoing"})
 
+PIECE_UNICODE = {
+    'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+    'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟',
+    '.': ''
+}
+
 # ── Role selection ──────────────────────────────────────────────────────────────
 if "role" not in st.session_state:
     st.session_state.role = None
+if "selected" not in st.session_state:
+    st.session_state.selected = None
 
 st.title("♟️ Chess Challenge")
 
@@ -42,33 +49,25 @@ if st.session_state.role is None:
     st.stop()
 
 role = st.session_state.role
-st.caption(f"You are playing as **{'White ♙' if role == 'white' else 'Black ♟'}**")
-
 game = load_game()
 board = chess.Board(game["fen"])
 
-# ── Handle move submitted via query param ───────────────────────────────────────
-params = st.query_params
-if "move" in params:
-    uci = params["move"]
-    try:
-        move = chess.Move.from_uci(uci)
-        if move not in board.legal_moves:
-            # try promotion to queen
-            move = chess.Move.from_uci(uci + "q")
-        if move in board.legal_moves:
-            board.push(move)
-            game["fen"] = board.fen()
-            game["moves"].append(move.uci())
-            if board.is_game_over():
-                game["status"] = "finished"
-            save_game(game)
-    except Exception:
-        pass
-    st.query_params.clear()
-    st.rerun()
+my_turn = (board.turn == chess.WHITE and role == "white") or \
+          (board.turn == chess.BLACK and role == "black")
 
-# ── Status ──────────────────────────────────────────────────────────────────────
+# ── Legal moves for current position ───────────────────────────────────────────
+legal_map = {}
+for m in board.legal_moves:
+    f = chess.square_name(m.from_square)
+    t = chess.square_name(m.to_square)
+    legal_map.setdefault(f, []).append(t)
+
+selected = st.session_state.selected
+
+# ── Header ──────────────────────────────────────────────────────────────────────
+st.caption(f"Playing as **{'White ♙' if role == 'white' else 'Black ♟'}**  |  "
+           f"Turn: **{'White' if board.turn == chess.WHITE else 'Black'}**")
+
 if board.is_checkmate():
     winner = "Black" if board.turn == chess.WHITE else "White"
     st.success(f"🏆 Checkmate! **{winner}** wins!")
@@ -76,208 +75,133 @@ elif board.is_stalemate():
     st.success("🤝 Stalemate — draw!")
 elif board.is_check():
     st.warning("⚠️ Check!")
+elif not my_turn:
+    st.info("⏳ Waiting for opponent's move…")
 
-my_turn = (board.turn == chess.WHITE and role == "white") or \
-          (board.turn == chess.BLACK and role == "black")
+# ── Build board grid ────────────────────────────────────────────────────────────
+# ranks/files ordered by perspective
+ranks = range(7, -1, -1) if role == "white" else range(0, 8)
+files = range(0, 8)       if role == "white" else range(7, -1, -1)
 
-if not my_turn and not board.is_game_over():
-    st.info(f"⏳ Waiting for **{'White' if board.turn == chess.WHITE else 'Black'}** to move…")
+FILE_NAMES = "abcdefgh"
+RANK_NAMES = "12345678"
 
-# ── Build legal moves map ───────────────────────────────────────────────────────
-legal_map = {}
-for m in board.legal_moves:
-    f = chess.square_name(m.from_square)
-    t = chess.square_name(m.to_square)
-    legal_map.setdefault(f, []).append(t)
+targets = legal_map.get(selected, []) if selected else []
 
-legal_map_json = json.dumps(legal_map)
-fen = board.fen()
-flipped = "true" if role == "black" else "false"
-my_turn_js = "true" if my_turn and not board.is_game_over() else "false"
-
-# ── HTML board with Unicode pieces ─────────────────────────────────────────────
-html = f"""
-<!DOCTYPE html>
-<html>
-<head>
+# Square size via CSS
+st.markdown("""
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: transparent; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }}
-  #board {{ border: 3px solid #555; display: inline-block; }}
-  .row {{ display: flex; }}
-  .sq {{
-    width: 56px; height: 56px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 40px;
-    cursor: pointer;
-    user-select: none;
-    position: relative;
-  }}
-  .light {{ background: #f0d9b5; }}
-  .dark  {{ background: #b58863; }}
-  .sq.selected  {{ background: #7fc97f !important; }}
-  .sq.target    {{ background: #7fc97f99 !important; }}
-  .sq.target::after {{
-    content: '';
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: rgba(0,140,0,0.45);
-    position: absolute;
-  }}
-  .sq.target.occupied::after {{
-    width: 52px; height: 52px;
-    border-radius: 0;
-    background: transparent;
-    border: 4px solid rgba(0,140,0,0.6);
-    border-radius: 4px;
-  }}
-  .label-file {{ font-size: 11px; position: absolute; bottom: 2px; right: 3px; color: #888; font-weight: bold; }}
-  .label-rank {{ font-size: 11px; position: absolute; top: 2px; left: 3px; color: #888; font-weight: bold; }}
-  #status {{ margin-top: 10px; font-size: 14px; color: #444; }}
+div[data-testid="column"] > div > div > div > div > div > button {
+    padding: 0 !important;
+    min-height: 60px !important;
+    height: 60px !important;
+    width: 60px !important;
+    font-size: 36px !important;
+    line-height: 1 !important;
+    border-radius: 0 !important;
+    border: none !important;
+}
 </style>
-</head>
-<body>
-<div id="board"></div>
-<div id="status"></div>
+""", unsafe_allow_html=True)
 
-<script>
-var PIECES = {{
-  'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
-  'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
-}};
+for rank_idx in ranks:
+    cols = st.columns([0.3] + [1]*8, gap="small")
+    cols[0].markdown(f"<div style='text-align:right;padding-top:18px;font-weight:bold'>{RANK_NAMES[rank_idx]}</div>", unsafe_allow_html=True)
+    for col_i, file_idx in enumerate(files):
+        sq = chess.square(file_idx, rank_idx)
+        sq_name = chess.square_name(sq)
+        piece = board.piece_at(sq)
+        symbol = PIECE_UNICODE.get(piece.symbol(), '') if piece else ''
 
-var legalMap = {legal_map_json};
-var myTurn   = {my_turn_js};
-var flipped  = {flipped};
-var selected = null;
+        is_light = (rank_idx + file_idx) % 2 == 1
+        is_selected = (sq_name == selected)
+        is_target = (sq_name in targets)
 
-// Parse FEN board part into 8x8 array [rank8..rank1][file a..h]
-function parseFen(fen) {{
-  var rows = fen.split(' ')[0].split('/');
-  var board = [];
-  for (var r = 0; r < 8; r++) {{
-    var row = [];
-    for (var ch of rows[r]) {{
-      if (isNaN(ch)) {{ row.push(ch); }}
-      else {{ for (var i = 0; i < parseInt(ch); i++) row.push(''); }}
-    }}
-    board.push(row);
-  }}
-  return board; // board[0] = rank 8, board[7] = rank 1
-}}
+        # Background colour
+        if is_selected:
+            bg = "#7fc97f"
+        elif is_target:
+            bg = "#a0d8a0"
+        elif is_light:
+            bg = "#f0d9b5"
+        else:
+            bg = "#b58863"
 
-var boardData = parseFen("{fen}");
-var files = ['a','b','c','d','e','f','g','h'];
-var ranks = ['8','7','6','5','4','3','2','1']; // rank index 0=rank8
+        # Piece colour
+        if piece:
+            piece_color = "#ffffff" if piece.color == chess.WHITE else "#000000"
+            text_shadow = "0 0 2px #000" if piece.color == chess.WHITE else "0 0 2px #fff"
+            label = f'<span style="color:{piece_color};text-shadow:{text_shadow};font-size:36px;line-height:60px">{symbol}</span>'
+        elif is_target:
+            label = '<span style="font-size:18px;color:rgba(0,120,0,0.6)">●</span>'
+        else:
+            label = '<span> </span>'
 
-function sqName(ri, fi) {{
-  return files[fi] + ranks[ri]; // e.g. ri=6,fi=4 -> e2
-}}
+        btn_html = f"""
+        <form action="" method="get">
+          <button name="sq" value="{sq_name}" style="
+            width:60px;height:60px;background:{bg};border:none;cursor:pointer;
+            display:flex;align-items:center;justify-content:center;
+            font-size:36px;padding:0;margin:0;
+          ">{label if piece else (label)}</button>
+        </form>
+        """
 
-function renderBoard() {{
-  var container = document.getElementById('board');
-  container.innerHTML = '';
+        with cols[col_i + 1]:
+            # Use st.button with background hack
+            clicked = st.button(
+                symbol if symbol else ("●" if is_target else " "),
+                key=f"sq_{sq_name}",
+                help=sq_name,
+                use_container_width=False,
+            )
+            # Colour the button via container
+            st.markdown(f"""
+            <style>
+            div[data-testid="stButton"] button[title="{sq_name}"] {{
+                background-color: {bg} !important;
+                color: {'white' if piece and piece.color == chess.WHITE else 'black'} !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
 
-  var rankOrder = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
-  var fileOrder = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+        if clicked and my_turn:
+            if selected is None:
+                # Select this square if it has a moveable piece
+                if sq_name in legal_map:
+                    st.session_state.selected = sq_name
+                    st.rerun()
+            else:
+                if sq_name in targets:
+                    # Make the move
+                    uci = selected + sq_name
+                    move = chess.Move.from_uci(uci)
+                    # Auto-promote to queen
+                    if move not in board.legal_moves:
+                        move = chess.Move.from_uci(uci + "q")
+                    if move in board.legal_moves:
+                        board.push(move)
+                        game["fen"] = board.fen()
+                        game["moves"].append(move.uci())
+                        if board.is_game_over():
+                            game["status"] = "finished"
+                        save_game(game)
+                    st.session_state.selected = None
+                    st.rerun()
+                elif sq_name in legal_map:
+                    st.session_state.selected = sq_name
+                    st.rerun()
+                else:
+                    st.session_state.selected = None
+                    st.rerun()
 
-  rankOrder.forEach(function(ri) {{
-    var rowDiv = document.createElement('div');
-    rowDiv.className = 'row';
-    fileOrder.forEach(function(fi) {{
-      var sq = sqName(ri, fi);
-      var piece = boardData[ri][fi];
-      var isLight = (ri + fi) % 2 === 0;
-      var div = document.createElement('div');
-      div.className = 'sq ' + (isLight ? 'light' : 'dark');
-      div.dataset.sq = sq;
-      if (piece) {{ div.className += ' occupied'; }}
-
-      // Highlight
-      if (sq === selected) div.className += ' selected';
-      if (selected && legalMap[selected] && legalMap[selected].includes(sq)) {{
-        div.className += ' target';
-        if (piece) div.className += ' occupied';
-      }}
-
-      // Piece
-      if (piece) {{
-        var span = document.createElement('span');
-        span.textContent = PIECES[piece] || '';
-        // White pieces white fill, black pieces dark fill via CSS filter trick
-        span.style.filter = piece === piece.toUpperCase()
-          ? 'drop-shadow(0 0 1px #333)'   // white piece
-          : 'drop-shadow(0 0 1px #eee)';  // black piece — glow helps distinguish
-        span.style.color = piece === piece.toUpperCase() ? '#fff' : '#000';
-        div.appendChild(span);
-      }}
-
-      // Labels
-      if (fi === (flipped ? 7 : 0)) {{
-        var rl = document.createElement('span');
-        rl.className = 'label-rank';
-        rl.textContent = ranks[ri];
-        div.appendChild(rl);
-      }}
-      if (ri === (flipped ? 0 : 7)) {{
-        var fl = document.createElement('span');
-        fl.className = 'label-file';
-        fl.textContent = files[fi];
-        div.appendChild(fl);
-      }}
-
-      div.addEventListener('click', function() {{ onClickSq(this.dataset.sq); }});
-      rowDiv.appendChild(div);
-    }});
-    container.appendChild(rowDiv);
-  }});
-}}
-
-function onClickSq(sq) {{
-  if (!myTurn) return;
-  if (selected) {{
-    var targets = legalMap[selected] || [];
-    if (targets.includes(sq) && sq !== selected) {{
-      submitMove(selected + sq);
-      selected = null;
-    }} else if (legalMap[sq] && legalMap[sq].length > 0) {{
-      selected = sq;
-      renderBoard();
-    }} else {{
-      selected = null;
-      renderBoard();
-    }}
-  }} else {{
-    if (legalMap[sq] && legalMap[sq].length > 0) {{
-      selected = sq;
-      renderBoard();
-    }}
-  }}
-}}
-
-function submitMove(uci) {{
-  document.getElementById('status').textContent = 'Moving… (' + uci + ')';
-  var form = document.createElement('form');
-  form.method = 'GET';
-  form.action = window.parent.location.pathname;
-  form.target = '_parent';
-  var input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'move';
-  input.value = uci;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
-}}
-
-renderBoard();
-document.getElementById('status').textContent = myTurn ? 'Your turn — click a piece.' : "Waiting for opponent…";
-</script>
-</body>
-</html>
-"""
-
-components.html(html, height=490, scrolling=False)
+# File labels
+cols = st.columns([0.3] + [1]*8, gap="small")
+for col_i, file_idx in enumerate(files):
+    cols[col_i + 1].markdown(
+        f"<div style='text-align:center;font-weight:bold'>{FILE_NAMES[file_idx]}</div>",
+        unsafe_allow_html=True
+    )
 
 # ── Move history ────────────────────────────────────────────────────────────────
 if game["moves"]:
@@ -296,13 +220,15 @@ col_a, col_b = st.columns(2)
 with col_a:
     if st.button("🔄 Switch sides"):
         st.session_state.role = None
+        st.session_state.selected = None
         st.rerun()
 with col_b:
     if st.button("🗑️ Reset game"):
         reset_game()
+        st.session_state.selected = None
         st.rerun()
 
-# ── Auto-refresh when waiting ──────────────────────────────────────────────────
+# ── Auto-refresh when waiting for opponent ──────────────────────────────────────
 if not my_turn and not board.is_game_over():
     time.sleep(3)
     st.rerun()

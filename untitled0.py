@@ -94,9 +94,13 @@ PIECES = {
 board_html = f"""
 <!DOCTYPE html><html><head><style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: transparent; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }}
-#wrap {{ display: flex; align-items: center; gap: 6px; }}
-#grid {{ display: grid; grid-template-columns: repeat(8, 62px); grid-template-rows: repeat(8, 62px); border: 3px solid #333; }}
+body {{ background: transparent; font-family: sans-serif; display: flex; flex-direction: column; align-items: flex-start; padding: 8px; }}
+#wrap {{ display: flex; flex-direction: row; align-items: flex-start; gap: 0; }}
+#rank-labels {{ display: flex; flex-direction: column; width: 20px; }}
+#rank-labels span {{ height: 62px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; color: #888; }}
+#grid {{ display: grid; grid-template-columns: repeat(8, 62px); grid-template-rows: repeat(8, 62px); border: 3px solid #333; flex-shrink: 0; }}
+#file-labels {{ display: flex; flex-direction: row; margin-left: 20px; }}
+#file-labels span {{ width: 62px; text-align: center; font-size: 13px; font-weight: bold; color: #888; padding-top: 4px; }}
 .sq {{
     width: 62px; height: 62px; display: flex; align-items: center; justify-content: center;
     font-size: 44px; cursor: pointer; position: relative; user-select: none;
@@ -115,18 +119,15 @@ body {{ background: transparent; font-family: sans-serif; display: flex; flex-di
 .piece {{ line-height: 1; position: relative; z-index: 1; }}
 .white-piece {{ color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; }}
 .black-piece {{ color: #000; text-shadow: 0 0 2px #fff; }}
-.rank-label {{ writing-mode: vertical-lr; font-size: 13px; font-weight: bold; color: #555; padding: 0 4px; display:flex; flex-direction:column; justify-content:space-around; height:496px; }}
-.file-label {{ display:flex; justify-content:space-around; width:496px; font-size:13px; font-weight:bold; color:#555; margin-top:4px; }}
-.file-label span, .rank-label span {{ width:62px; text-align:center; display:flex; align-items:center; justify-content:center; }}
 #status {{ margin-top: 10px; font-size: 14px; color: #444; min-height: 20px; }}
 </style></head><body>
 
 <div id="wrap">
-  <div class="rank-label" id="rankLabels"></div>
+  <div id="rank-labels"></div>
   <div id="grid"></div>
 </div>
-<div class="file-label" id="fileLabels"></div>
-<div id="status"></div>
+<div id="file-labels"></div>
+<div id="status" style="margin-top:8px;font-size:14px;color:#888;"></div>
 
 <script>
 var PIECES = {json.dumps(PIECES)};
@@ -157,13 +158,11 @@ var rankOrder = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
 var fileOrder = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
 
 // Labels
-var rl = document.getElementById('rankLabels');
+var rl = document.getElementById('rank-labels');
 rankOrder.forEach(function(ri) {{
     var s = document.createElement('span'); s.textContent = ranks[ri]; rl.appendChild(s);
 }});
-var fl = document.getElementById('fileLabels');
-// spacer for rank label column
-var spacer = document.createElement('span'); spacer.style.width='30px'; fl.appendChild(spacer);
+var fl = document.getElementById('file-labels');
 fileOrder.forEach(function(fi) {{
     var s = document.createElement('span'); s.textContent = files[fi]; fl.appendChild(s);
 }});

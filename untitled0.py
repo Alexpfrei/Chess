@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Jun 12 14:08:25 2026
-
-@author: Frei.Alexander.P
-"""
-
 import streamlit as st
 import chess
 import chess.svg
@@ -86,7 +79,7 @@ if status_msg:
 # ── Board display ───────────────────────────────────────────────────────────────
 flipped = (role == "black")
 svg = chess.svg.board(board, flipped=flipped, size=420)
-st.image(svg.encode(), use_container_width=False)
+st.html(f'<div style="display:flex;justify-content:center">{svg}</div>')
 
 # ── Move input ──────────────────────────────────────────────────────────────────
 my_turn = (board.turn == chess.WHITE and role == "white") or \

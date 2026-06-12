@@ -148,22 +148,21 @@ for rank_idx in ranks:
         """
 
         with cols[col_i + 1]:
-            # Use st.button with background hack
+            st.markdown(f"""
+            <style>
+            div[data-testid="stButton"]:has(button[title="{sq_name}"]) button {{
+                background-color: {bg} !important;
+                color: {'white' if piece and piece.color == chess.WHITE else 'black'} !important;
+                text-shadow: {'0 0 3px #000' if piece and piece.color == chess.WHITE else '0 0 3px #fff'} !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
             clicked = st.button(
                 symbol if symbol else ("●" if is_target else " "),
                 key=f"sq_{sq_name}",
                 help=sq_name,
                 use_container_width=False,
             )
-            # Colour the button via container
-            st.markdown(f"""
-            <style>
-            div[data-testid="stButton"] button[title="{sq_name}"] {{
-                background-color: {bg} !important;
-                color: {'white' if piece and piece.color == chess.WHITE else 'black'} !important;
-            }}
-            </style>
-            """, unsafe_allow_html=True)
 
         if clicked and my_turn:
             if selected is None:

@@ -45,9 +45,14 @@ if st.session_state.role is None:
     with c1:
         if st.button("♙ I am White", use_container_width=True):
             st.session_state.role = "white"
+            st.rerun()
     with c2:
         if st.button("♟ I am Black", use_container_width=True):
             st.session_state.role = "black"
+            st.rerun()
+    st.stop()
+
+if st.session_state.role is None:
     st.stop()
 
 role = st.session_state.role

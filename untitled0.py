@@ -5,22 +5,33 @@ import os
 import time
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Chess Challenge", layout="centered")
+st.set_page_config(page_title="Chess Challenge", layout="wide")
 
 GAME_FILE = "game.json"
+CHAT_FILE = "chat.json"
 
 def load_game():
     if os.path.exists(GAME_FILE):
         with open(GAME_FILE) as f:
             return json.load(f)
-    return {"fen": chess.STARTING_FEN, "moves": [], "status": "ongoing"}
+    return {"fen": chess.STARTING_FEN, "moves": [], "status": "ongoing", "draw_offer": None, "result": None}
 
 def save_game(data):
     with open(GAME_FILE, "w") as f:
         json.dump(data, f)
 
 def reset_game():
-    save_game({"fen": chess.STARTING_FEN, "moves": [], "status": "ongoing"})
+    save_game({"fen": chess.STARTING_FEN, "moves": [], "status": "ongoing", "draw_offer": None, "result": None})
+
+def load_chat():
+    if os.path.exists(CHAT_FILE):
+        with open(CHAT_FILE) as f:
+            return json.load(f)
+    return []
+
+def save_chat(msgs):
+    with open(CHAT_FILE, "w") as f:
+        json.dump(msgs, f)
 
 for k, v in [("role", None), ("pending_move", "")]:
     if k not in st.session_state:
@@ -40,9 +51,11 @@ if st.session_state.role is None:
     st.stop()
 
 role = st.session_state.role
+opponent = "black" if role == "white" else "white"
 game = load_game()
 board = chess.Board(game["fen"])
 
+# ── Process pending move ────────────────────────────────────────────────────────
 if st.session_state.pending_move:
     uci = st.session_state.pending_move
     st.session_state.pending_move = ""
@@ -51,12 +64,14 @@ if st.session_state.pending_move:
         if move not in board.legal_moves:
             move = chess.Move.from_uci(uci + "q")
         if move in board.legal_moves:
-            san = board.san(move)          # get SAN before pushing
+            san = board.san(move)       # SAN BEFORE push
             board.push(move)
             game["fen"] = board.fen()
-            game["moves"].append(san)      # store SAN e.g. Nf3, O-O
+            game["moves"].append(san)
+            game["draw_offer"] = None   # clear draw offer on any move
             if board.is_game_over():
                 game["status"] = "finished"
+                game["result"] = board.result()
             save_game(game)
     except Exception:
         pass
@@ -71,22 +86,36 @@ for m in board.legal_moves:
     t = chess.square_name(m.to_square)
     legal_map.setdefault(f, []).append(t)
 
-st.caption(f"Playing as **{'White ♙' if role == 'white' else 'Black ♟'}**  |  Turn: **{'White' if board.turn == chess.WHITE else 'Black'}**")
-if board.is_checkmate():
-    st.success(f"🏆 Checkmate! **{'Black' if board.turn == chess.WHITE else 'White'}** wins!")
-elif board.is_stalemate():
-    st.success("🤝 Stalemate — draw!")
-elif board.is_check():
-    st.warning("⚠️ Check!")
-elif not my_turn and not board.is_game_over():
-    st.info("⏳ Waiting for opponent's move…")
+last_move_san = game["moves"][-1] if game["moves"] else None
+last_from = chess.square_name(board.peek().from_square) if board.move_stack else None
+last_to   = chess.square_name(board.peek().to_square)   if board.move_stack else None
 
-PIECES = {
-    'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙',
-    'k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'
-}
+# ── Layout ──────────────────────────────────────────────────────────────────────
+board_col, side_col = st.columns([2, 1])
 
-board_html = f"""
+with board_col:
+    st.caption(f"Playing as **{'White ♙' if role == 'white' else 'Black ♟'}**  |  Turn: **{'White' if board.turn == chess.WHITE else 'Black'}**")
+
+    result = game.get("result")
+    if result:
+        st.success(f"🏁 {result}")
+    elif board.is_checkmate():
+        st.success(f"🏆 Checkmate! **{'Black' if board.turn == chess.WHITE else 'White'}** wins!")
+    elif board.is_stalemate():
+        st.success("🤝 Stalemate — draw!")
+    elif board.is_check():
+        st.warning("⚠️ Check!")
+    elif game.get("draw_offer") == opponent:
+        st.info(f"🤝 **{opponent.capitalize()}** is offering a draw!")
+    elif not my_turn and game["status"] == "ongoing":
+        st.info("⏳ Waiting for opponent's move…")
+
+    PIECES = {
+        'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙',
+        'k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'
+    }
+
+    board_html = f"""
 <!DOCTYPE html><html><head><style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ background: transparent; font-family: sans-serif; display: flex; flex-direction: column; align-items: flex-start; padding: 8px; }}
@@ -99,6 +128,7 @@ body {{ background: transparent; font-family: sans-serif; display: flex; flex-di
 .sq {{ width: 62px; height: 62px; display: flex; align-items: center; justify-content: center; font-size: 44px; cursor: pointer; position: relative; user-select: none; }}
 .light {{ background: #f0d9b5; }}
 .dark  {{ background: #b58863; }}
+.last-move {{ background: #cdd16e !important; }}
 .sq.selected {{ outline: 4px inset rgba(20,180,20,0.8); }}
 .sq.target .dot {{ width: 22px; height: 22px; border-radius: 50%; background: rgba(20,160,20,0.5); position: absolute; }}
 .sq.target.has-piece .dot {{ width: 58px; height: 58px; border-radius: 0; background: transparent; border: 4px solid rgba(20,160,20,0.6); }}
@@ -117,8 +147,11 @@ body {{ background: transparent; font-family: sans-serif; display: flex; flex-di
 <script>
 var PIECES = {json.dumps(PIECES)};
 var legalMap = {json.dumps(legal_map)};
-var myTurn = {'true' if my_turn and not board.is_game_over() else 'false'};
+var myTurn = {'true' if my_turn and game['status'] == 'ongoing' else 'false'};
 var flipped = {'true' if role == 'black' else 'false'};
+var lastFrom = {json.dumps(last_from)};
+var lastTo   = {json.dumps(last_to)};
+var lastSAN  = {json.dumps(last_move_san)};
 var selected = null;
 
 function parseFen(fen) {{
@@ -163,6 +196,7 @@ function render() {{
 
             var div = document.createElement('div');
             div.className = 'sq ' + (isLight ? 'light' : 'dark');
+            if (sq === lastFrom || sq === lastTo) div.className += ' last-move';
             if (isSelected) div.className += ' selected';
             if (isTarget) {{
                 div.className += ' target';
@@ -181,6 +215,9 @@ function render() {{
             grid.appendChild(div);
         }});
     }});
+    document.getElementById('status').textContent =
+        lastSAN ? 'Last move: ' + lastSAN + (myTurn ? ' — your turn!' : '') :
+        (myTurn ? 'Your turn — click a piece.' : 'Waiting for opponent…');
 }}
 
 function onClick() {{
@@ -201,8 +238,7 @@ function onClick() {{
 }}
 
 function sendMove(uci) {{
-    document.getElementById('status').textContent = 'Sending move: ' + uci + '…';
-    // Find the hidden input by placeholder and fire a change event — no Enter needed
+    document.getElementById('status').textContent = 'Sending move…';
     var inputs = window.parent.document.querySelectorAll('input[type=text]');
     for (var inp of inputs) {{
         if (inp.getAttribute('aria-label') === 'move_input') {{
@@ -210,7 +246,6 @@ function sendMove(uci) {{
             setter.call(inp, uci);
             inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
             inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            // Simulate Enter keypress to submit without user pressing Enter
             inp.dispatchEvent(new KeyboardEvent('keydown', {{ bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13 }}));
             inp.dispatchEvent(new KeyboardEvent('keypress', {{ bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13 }}));
             inp.dispatchEvent(new KeyboardEvent('keyup', {{ bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13 }}));
@@ -220,34 +255,84 @@ function sendMove(uci) {{
 }}
 
 render();
-document.getElementById('status').textContent = myTurn ? 'Your turn — click a piece.' : 'Waiting for opponent…';
 </script>
 </body></html>
 """
 
-components.html(board_html, height=580)
+    components.html(board_html, height=580)
 
-move_val = st.text_input("move_input", label_visibility="collapsed", key="move_input_box")
-if move_val and move_val != st.session_state.get("last_move", ""):
-    st.session_state["last_move"] = move_val
-    st.session_state["pending_move"] = move_val
-    st.rerun()
+    move_val = st.text_input("move_input", label_visibility="collapsed", key="move_input_box")
+    if move_val and move_val != st.session_state.get("last_move", ""):
+        st.session_state["last_move"] = move_val
+        st.session_state["pending_move"] = move_val
+        st.rerun()
 
-if game["moves"]:
-    with st.expander("Move history"):
-        moves = game["moves"]
-        pairs = [f"{i//2+1}. {moves[i]}  {moves[i+1] if i+1 < len(moves) else '…'}" for i in range(0, len(moves), 2)]
-        st.text("\n".join(pairs))
+    if game["moves"]:
+        with st.expander("Move history"):
+            moves = game["moves"]
+            pairs = [f"{i//2+1}. {moves[i]}  {moves[i+1] if i+1 < len(moves) else '…'}" for i in range(0, len(moves), 2)]
+            st.text("\n".join(pairs))
 
-st.divider()
-c1, c2 = st.columns(2)
-with c1:
-    if st.button("🔄 Switch sides"):
-        st.session_state.role = None; st.rerun()
-with c2:
-    if st.button("🗑️ Reset game"):
-        reset_game(); st.rerun()
+    st.divider()
 
-if not my_turn and not board.is_game_over():
+    if game["status"] == "ongoing":
+        a1, a2, a3, a4 = st.columns(4)
+        with a1:
+            if st.button("🏳️ Resign", use_container_width=True):
+                game["status"] = "finished"
+                game["result"] = f"{'Black' if role == 'white' else 'White'} wins by resignation"
+                save_game(game); st.rerun()
+        with a2:
+            if game.get("draw_offer") == opponent:
+                if st.button("✅ Accept Draw", use_container_width=True):
+                    game["status"] = "finished"
+                    game["result"] = "Draw by agreement"
+                    save_game(game); st.rerun()
+            elif game.get("draw_offer") == role:
+                st.button("🤝 Draw offered…", disabled=True, use_container_width=True)
+            else:
+                if st.button("🤝 Offer Draw", use_container_width=True):
+                    game["draw_offer"] = role
+                    save_game(game); st.rerun()
+        with a3:
+            if game.get("draw_offer") == opponent:
+                if st.button("❌ Decline Draw", use_container_width=True):
+                    game["draw_offer"] = None
+                    save_game(game); st.rerun()
+        with a4:
+            if st.button("🔄 Switch sides", use_container_width=True):
+                st.session_state.role = None; st.rerun()
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🗑️ New game", use_container_width=True):
+                reset_game()
+                if os.path.exists(CHAT_FILE): os.remove(CHAT_FILE)
+                st.rerun()
+        with c2:
+            if st.button("🔄 Switch sides", use_container_width=True):
+                st.session_state.role = None; st.rerun()
+
+# ── Chat ────────────────────────────────────────────────────────────────────────
+with side_col:
+    st.subheader("💬 Chat")
+    chat = load_chat()
+    with st.container(height=480):
+        if not chat:
+            st.caption("No messages yet…")
+        for msg in chat:
+            who = msg["role"].capitalize()
+            bg = "#dfeedd" if msg["role"] == "white" else "#e8eeff"
+            st.markdown(
+                f'<div style="background:{bg};border-radius:8px;padding:6px 10px;margin:4px 0;color:#000">'
+                f'<b>{who}</b>: {msg["text"]}</div>', unsafe_allow_html=True)
+    with st.form("chat_form", clear_on_submit=True):
+        chat_text = st.text_input("Message", placeholder="Say something…")
+        if st.form_submit_button("Send") and chat_text.strip():
+            chat.append({"role": role, "text": chat_text.strip()})
+            save_chat(chat); st.rerun()
+
+# ── Auto-refresh ────────────────────────────────────────────────────────────────
+if not board.is_game_over() and game["status"] == "ongoing":
     time.sleep(3)
     st.rerun()

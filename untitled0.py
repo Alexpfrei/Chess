@@ -325,9 +325,14 @@ render();
                     f'<b>{who}</b>: {msg["text"]}</div>', unsafe_allow_html=True)
         with st.form("chat_form", clear_on_submit=True):
             chat_text = st.text_input("Message", placeholder="Say something…")
-            if st.form_submit_button("Send") and chat_text.strip():
-                chat.append({"role": role, "text": chat_text.strip()})
-                save_chat(chat); st.rerun()
+            s1, s2 = st.columns(2)
+            with s1:
+                if st.form_submit_button("Send", use_container_width=True) and chat_text.strip():
+                    chat.append({"role": role, "text": chat_text.strip()})
+                    save_chat(chat); st.rerun()
+            with s2:
+                if st.form_submit_button("🗑️ Clear Chat", use_container_width=True):
+                    save_chat([]); st.rerun()
 
     # ── Auto-refresh ─────────────────────────────────────────────────────────────
     if game["status"] == "ongoing":

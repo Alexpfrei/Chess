@@ -39,7 +39,7 @@ for k, v in [("role", None), ("pending_move", "")]:
 
 st.title("♟️ Chess Challenge")
 
-# ── Role selection ──────────────────────────────────────────────────────────────
+# ── Role selection — hard stop after this block ─────────────────────────────────
 if st.session_state.role is None:
     st.subheader("Who are you?")
     c1, c2 = st.columns(2)
@@ -51,74 +51,75 @@ if st.session_state.role is None:
         if st.button("♟ I am Black", use_container_width=True):
             st.session_state.role = "black"
             st.rerun()
+    st.stop()  # nothing below this runs until role is picked
 
-# ── Game ────────────────────────────────────────────────────────────────────────
-else:
-    role = st.session_state.role
-    opponent = "black" if role == "white" else "white"
-    game = load_game()
-    board = chess.Board(game["fen"])
+# ── From here on, role is guaranteed to be set ─────────────────────────────────
+role = st.session_state.role
+opponent = "black" if role == "white" else "white"
+game = load_game()
+board = chess.Board(game["fen"])
 
-    # Process pending move
-    if st.session_state.pending_move:
-        uci = st.session_state.pending_move
-        st.session_state.pending_move = ""
-        try:
-            move = chess.Move.from_uci(uci)
-            if move not in board.legal_moves:
-                move = chess.Move.from_uci(uci + "q")
-            if move in board.legal_moves:
-                san = board.san(move)
-                board.push(move)
-                game["fen"] = board.fen()
-                game["moves"].append(san)
-                game["draw_offer"] = None
-                if board.is_game_over():
-                    game["status"] = "finished"
-                    game["result"] = board.result()
-                save_game(game)
-        except Exception:
-            pass
-        st.rerun()
+# ── Process pending move ────────────────────────────────────────────────────────
+if st.session_state.pending_move:
+    uci = st.session_state.pending_move
+    st.session_state.pending_move = ""
+    try:
+        move = chess.Move.from_uci(uci)
+        if move not in board.legal_moves:
+            move = chess.Move.from_uci(uci + "q")
+        if move in board.legal_moves:
+            san = board.san(move)
+            board.push(move)
+            game["fen"] = board.fen()
+            game["moves"].append(san)
+            game["draw_offer"] = None
+            if board.is_game_over():
+                game["status"] = "finished"
+                game["result"] = board.result()
+            save_game(game)
+    except Exception:
+        pass
+    st.rerun()
 
-    my_turn = (board.turn == chess.WHITE and role == "white") or \
-              (board.turn == chess.BLACK and role == "black")
+my_turn = (board.turn == chess.WHITE and role == "white") or \
+          (board.turn == chess.BLACK and role == "black")
 
-    legal_map = {}
-    for m in board.legal_moves:
-        f = chess.square_name(m.from_square)
-        t = chess.square_name(m.to_square)
-        legal_map.setdefault(f, []).append(t)
+legal_map = {}
+for m in board.legal_moves:
+    f = chess.square_name(m.from_square)
+    t = chess.square_name(m.to_square)
+    legal_map.setdefault(f, []).append(t)
 
-    last_move_san = game["moves"][-1] if game["moves"] else None
-    last_from = chess.square_name(board.peek().from_square) if board.move_stack else None
-    last_to   = chess.square_name(board.peek().to_square)   if board.move_stack else None
+last_move_san = game["moves"][-1] if game["moves"] else None
+last_from = chess.square_name(board.peek().from_square) if board.move_stack else None
+last_to   = chess.square_name(board.peek().to_square)   if board.move_stack else None
 
-    board_col, side_col = st.columns([2, 1])
+# ── Layout ──────────────────────────────────────────────────────────────────────
+board_col, side_col = st.columns([2, 1])
 
-    with board_col:
-        st.caption(f"Playing as **{'White ♙' if role == 'white' else 'Black ♟'}**  |  Turn: **{'White' if board.turn == chess.WHITE else 'Black'}**")
+with board_col:
+    st.caption(f"Playing as **{'White ♙' if role == 'white' else 'Black ♟'}**  |  Turn: **{'White' if board.turn == chess.WHITE else 'Black'}**")
 
-        result = game.get("result")
-        if result:
-            st.success(f"🏁 {result}")
-        elif board.is_checkmate():
-            st.success(f"🏆 Checkmate! **{'Black' if board.turn == chess.WHITE else 'White'}** wins!")
-        elif board.is_stalemate():
-            st.success("🤝 Stalemate — draw!")
-        elif board.is_check():
-            st.warning("⚠️ Check!")
-        elif game.get("draw_offer") == opponent:
-            st.info(f"🤝 **{opponent.capitalize()}** is offering a draw!")
-        elif not my_turn and game["status"] == "ongoing":
-            st.info("⏳ Waiting for opponent's move…")
+    result = game.get("result")
+    if result:
+        st.success(f"🏁 {result}")
+    elif board.is_checkmate():
+        st.success(f"🏆 Checkmate! **{'Black' if board.turn == chess.WHITE else 'White'}** wins!")
+    elif board.is_stalemate():
+        st.success("🤝 Stalemate — draw!")
+    elif board.is_check():
+        st.warning("⚠️ Check!")
+    elif game.get("draw_offer") == opponent:
+        st.info(f"🤝 **{opponent.capitalize()}** is offering a draw!")
+    elif not my_turn and game["status"] == "ongoing":
+        st.info("⏳ Waiting for opponent's move…")
 
-        PIECES = {
-            'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙',
-            'k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'
-        }
+    PIECES = {
+        'K':'♔','Q':'♕','R':'♖','B':'♗','N':'♘','P':'♙',
+        'k':'♚','q':'♛','r':'♜','b':'♝','n':'♞','p':'♟'
+    }
 
-        board_html = f"""
+    board_html = f"""
 <!DOCTYPE html><html><head><style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ background: transparent; font-family: sans-serif; display: flex; flex-direction: column; align-items: flex-start; padding: 8px; }}
@@ -256,85 +257,85 @@ render();
 </body></html>
 """
 
-        components.html(board_html, height=580)
+    components.html(board_html, height=580)
 
-        move_val = st.text_input("move_input", label_visibility="collapsed", key="move_input_box")
-        if move_val and move_val != st.session_state.get("last_move", ""):
-            st.session_state["last_move"] = move_val
-            st.session_state["pending_move"] = move_val
-            st.rerun()
-
-        if game["moves"]:
-            with st.expander("Move history"):
-                moves = game["moves"]
-                pairs = [f"{i//2+1}. {moves[i]}  {moves[i+1] if i+1 < len(moves) else '…'}" for i in range(0, len(moves), 2)]
-                st.text("\n".join(pairs))
-
-        st.divider()
-
-        if game["status"] == "ongoing":
-            a1, a2, a3, a4 = st.columns(4)
-            with a1:
-                if st.button("🏳️ Resign", use_container_width=True):
-                    game["status"] = "finished"
-                    game["result"] = f"{'Black' if role == 'white' else 'White'} wins by resignation"
-                    save_game(game); st.rerun()
-            with a2:
-                if game.get("draw_offer") == opponent:
-                    if st.button("✅ Accept Draw", use_container_width=True):
-                        game["status"] = "finished"
-                        game["result"] = "Draw by agreement"
-                        save_game(game); st.rerun()
-                elif game.get("draw_offer") == role:
-                    st.button("🤝 Draw offered…", disabled=True, use_container_width=True)
-                else:
-                    if st.button("🤝 Offer Draw", use_container_width=True):
-                        game["draw_offer"] = role
-                        save_game(game); st.rerun()
-            with a3:
-                if game.get("draw_offer") == opponent:
-                    if st.button("❌ Decline Draw", use_container_width=True):
-                        game["draw_offer"] = None
-                        save_game(game); st.rerun()
-            with a4:
-                if st.button("🔄 Switch sides", use_container_width=True):
-                    st.session_state.role = None; st.rerun()
-        else:
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("🗑️ New game", use_container_width=True):
-                    reset_game()
-                    if os.path.exists(CHAT_FILE): os.remove(CHAT_FILE)
-                    st.rerun()
-            with c2:
-                if st.button("🔄 Switch sides", use_container_width=True):
-                    st.session_state.role = None; st.rerun()
-
-    # ── Chat ────────────────────────────────────────────────────────────────────
-    with side_col:
-        st.subheader("💬 Chat")
-        chat = load_chat()
-        with st.container(height=480):
-            if not chat:
-                st.caption("No messages yet…")
-            for msg in chat:
-                who = msg["role"].capitalize()
-                bg = "#dfeedd" if msg["role"] == "white" else "#e8eeff"
-                st.markdown(
-                    f'<div style="background:{bg};border-radius:8px;padding:6px 10px;margin:4px 0;color:#000">'
-                    f'<b>{who}</b>: {msg["text"]}</div>', unsafe_allow_html=True)
-        with st.form("chat_form", clear_on_submit=True):
-            chat_text = st.text_input("Message", placeholder="Say something…")
-            s1, s2 = st.columns(2)
-            with s1:
-                if st.form_submit_button("Send", use_container_width=True) and chat_text.strip():
-                    chat.append({"role": role, "text": chat_text.strip()})
-                    save_chat(chat); st.rerun()
-            with s2:
-                if st.form_submit_button("🗑️ Clear Chat", use_container_width=True):
-                    save_chat([]); st.rerun()
-
-    # ── Auto-refresh ─────────────────────────────────────────────────────────────
-    if game["status"] == "ongoing":
-        time.sleep(3)
+    move_val = st.text_input("move_input", label_visibility="collapsed", key="move_input_box")
+    if move_val and move_val != st.session_state.get("last_move", ""):
+        st.session_state["last_move"] = move_val
+        st.session_state["pending_move"] = move_val
         st.rerun()
+
+    if game["moves"]:
+        with st.expander("Move history"):
+            moves = game["moves"]
+            pairs = [f"{i//2+1}. {moves[i]}  {moves[i+1] if i+1 < len(moves) else '…'}" for i in range(0, len(moves), 2)]
+            st.text("\n".join(pairs))
+
+    st.divider()
+
+    if game["status"] == "ongoing":
+        a1, a2, a3, a4 = st.columns(4)
+        with a1:
+            if st.button("🏳️ Resign", use_container_width=True):
+                game["status"] = "finished"
+                game["result"] = f"{'Black' if role == 'white' else 'White'} wins by resignation"
+                save_game(game); st.rerun()
+        with a2:
+            if game.get("draw_offer") == opponent:
+                if st.button("✅ Accept Draw", use_container_width=True):
+                    game["status"] = "finished"
+                    game["result"] = "Draw by agreement"
+                    save_game(game); st.rerun()
+            elif game.get("draw_offer") == role:
+                st.button("🤝 Draw offered…", disabled=True, use_container_width=True)
+            else:
+                if st.button("🤝 Offer Draw", use_container_width=True):
+                    game["draw_offer"] = role
+                    save_game(game); st.rerun()
+        with a3:
+            if game.get("draw_offer") == opponent:
+                if st.button("❌ Decline Draw", use_container_width=True):
+                    game["draw_offer"] = None
+                    save_game(game); st.rerun()
+        with a4:
+            if st.button("🔄 Switch sides", use_container_width=True):
+                st.session_state.role = None; st.rerun()
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🗑️ New game", use_container_width=True):
+                reset_game()
+                if os.path.exists(CHAT_FILE): os.remove(CHAT_FILE)
+                st.rerun()
+        with c2:
+            if st.button("🔄 Switch sides", use_container_width=True):
+                st.session_state.role = None; st.rerun()
+
+# ── Chat ────────────────────────────────────────────────────────────────────────
+with side_col:
+    st.subheader("💬 Chat")
+    chat = load_chat()
+    with st.container(height=480):
+        if not chat:
+            st.caption("No messages yet…")
+        for msg in chat:
+            who = msg["role"].capitalize()
+            bg = "#dfeedd" if msg["role"] == "white" else "#e8eeff"
+            st.markdown(
+                f'<div style="background:{bg};border-radius:8px;padding:6px 10px;margin:4px 0;color:#000">'
+                f'<b>{who}</b>: {msg["text"]}</div>', unsafe_allow_html=True)
+    with st.form("chat_form", clear_on_submit=True):
+        chat_text = st.text_input("Message", placeholder="Say something…")
+        s1, s2 = st.columns(2)
+        with s1:
+            if st.form_submit_button("Send", use_container_width=True) and chat_text.strip():
+                chat.append({"role": role, "text": chat_text.strip()})
+                save_chat(chat); st.rerun()
+        with s2:
+            if st.form_submit_button("🗑️ Clear Chat", use_container_width=True):
+                save_chat([]); st.rerun()
+
+# ── Auto-refresh ────────────────────────────────────────────────────────────────
+if game["status"] == "ongoing":
+    time.sleep(3)
+    st.rerun()

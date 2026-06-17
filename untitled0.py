@@ -44,10 +44,10 @@ if st.session_state.role is None:
     c1, c2 = st.columns(2)
     with c1:
         if st.button("♙ I am White", use_container_width=True):
-            st.session_state.role = "white"; st.rerun()
+            st.session_state.role = "white"
     with c2:
         if st.button("♟ I am Black", use_container_width=True):
-            st.session_state.role = "black"; st.rerun()
+            st.session_state.role = "black"
     st.stop()
 
 role = st.session_state.role
